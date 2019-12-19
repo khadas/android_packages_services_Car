@@ -58,7 +58,4 @@ interface ICarTrustAgentBleService {
     void onEscrowTokenAdded(in byte[] token, long handle, int uid);
     void onEscrowTokenRemoved(long handle, boolean successful);
     void onEscrowTokenActiveStateChanged(long handle, boolean active);
-
-    /** Management */
-    int getUserIdByEscrowTokenHandle(long tokenHandle);
 }

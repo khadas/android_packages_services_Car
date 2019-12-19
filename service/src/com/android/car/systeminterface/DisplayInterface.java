@@ -16,10 +16,6 @@
 
 package com.android.car.systeminterface;
 
-import static com.android.settingslib.display.BrightnessUtils.GAMMA_SPACE_MAX;
-import static com.android.settingslib.display.BrightnessUtils.convertGammaToLinear;
-import static com.android.settingslib.display.BrightnessUtils.convertLinearToGamma;
-
 import android.content.ContentResolver;
 import android.content.Context;
 import android.database.ContentObserver;
@@ -64,18 +60,20 @@ public interface DisplayInterface {
                 new ContentObserver(new Handler(Looper.getMainLooper())) {
                     @Override
                     public void onChange(boolean selfChange) {
-                        int linear = GAMMA_SPACE_MAX;
+                        int brightness = mMinimumBacklight;
+                        int range = mMaximumBacklight - mMinimumBacklight;
 
                         try {
-                            linear = System.getInt(mContentResolver, System.SCREEN_BRIGHTNESS);
+                            brightness = System.getInt(mContentResolver, System.SCREEN_BRIGHTNESS);
                         } catch (SettingNotFoundException e) {
                             Log.e(CarLog.TAG_POWER, "Could not get SCREEN_BRIGHTNESS:  " + e);
                         }
-                        int gamma = convertLinearToGamma(linear, mMinimumBacklight,
-                                                         mMaximumBacklight);
-                        int percentBright = (gamma * 100 + ((GAMMA_SPACE_MAX + 1) / 2))
-                                / GAMMA_SPACE_MAX;
-                        mService.sendDisplayBrightness(percentBright);
+                        // Convert brightness from 0-255 to 0-100%
+                        brightness -= mMinimumBacklight;
+                        brightness *= 100;
+                        brightness += (range + 1) / 2;
+                        brightness /= range;
+                        mService.sendDisplayBrightness(brightness);
                     }
                 };
 
@@ -126,10 +124,26 @@ public interface DisplayInterface {
         }
 
         @Override
-        public void setDisplayBrightness(int percentBright) {
-            int gamma = (percentBright * GAMMA_SPACE_MAX + 50) / 100;
-            int linear = convertGammaToLinear(gamma, mMinimumBacklight, mMaximumBacklight);
-            System.putInt(mContentResolver, System.SCREEN_BRIGHTNESS, linear);
+        public void setDisplayBrightness(int brightness) {
+            // Brightness is set in percent.  Need to convert this into 0-255 scale.  The actual
+            //  brightness algorithm should look like this:
+            //
+            //      newBrightness = (brightness * (max - min)) + min
+            //
+            //  Since we're using integer arithmetic, do the multiplication first, then add 50 to
+            //  round up as needed.
+            brightness *= mMaximumBacklight - mMinimumBacklight;    // Multiply by full range
+            brightness += 50;                                       // Integer rounding
+            brightness /= 100;                                      // Divide by 100
+            brightness += mMinimumBacklight;
+            // Range checking
+            if (brightness < mMinimumBacklight) {
+                brightness = mMinimumBacklight;
+            } else if (brightness > mMaximumBacklight) {
+                brightness = mMaximumBacklight;
+            }
+            // Set the brightness
+            System.putInt(mContentResolver, System.SCREEN_BRIGHTNESS, brightness);
         }
 
         @Override

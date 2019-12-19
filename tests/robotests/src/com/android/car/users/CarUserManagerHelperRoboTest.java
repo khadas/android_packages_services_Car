@@ -122,7 +122,7 @@ public class CarUserManagerHelperRoboTest {
     }
 
     @Test
-    public void testGetAllUsersExceptForegroundUser() {
+    public void testGetAllUsersExcludesForegroundUser() {
         ShadowActivityManager.setCurrentUser(11);
         ShadowUserManager userManager = ShadowUserManager.getShadow();
 

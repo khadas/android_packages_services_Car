@@ -46,16 +46,13 @@ public class CarEnrolmentActivity extends Activity {
     private static final String SP_HANDLE_KEY = "sp-test";
     private static final int FINE_LOCATION_REQUEST_CODE = 42;
 
-    /**
-     * Receives escrow token callbacks, registered on {@link CarTrustAgentBleService}
-     */
     private final ICarTrustAgentTokenResponseCallback mCarTrustAgentTokenResponseCallback =
             new ICarTrustAgentTokenResponseCallback.Stub() {
         @Override
         public void onEscrowTokenAdded(byte[] token, long handle, int uid) {
             runOnUiThread(() -> {
                 mPrefs.edit().putLong(SP_HANDLE_KEY, handle).apply();
-                Log.d(TAG, "stored new handle for user: " + uid);
+                Log.d(TAG, "stored new handle");
             });
 
             if (mBluetoothDevice == null) {
@@ -84,9 +81,6 @@ public class CarEnrolmentActivity extends Activity {
         }
     };
 
-    /**
-     * Receives BLE state change callbacks, registered on {@link CarTrustAgentBleService}
-     */
     private final ICarTrustAgentBleCallback mBleConnectionCallback =
             new ICarTrustAgentBleCallback.Stub() {
         @Override
@@ -114,12 +108,6 @@ public class CarEnrolmentActivity extends Activity {
         }
     };
 
-    /**
-     * {@link CarTrustAgentBleService} will callback this when receives enrolment data.
-     *
-     * Here is the place we can prompt to the user on HU whether or not to add this
-     * {@link #mBluetoothDevice} as a trust device.
-     */
     private final ICarTrustAgentEnrolmentCallback mEnrolmentCallback =
             new ICarTrustAgentEnrolmentCallback.Stub() {
         @Override
@@ -133,9 +121,6 @@ public class CarEnrolmentActivity extends Activity {
         }
     };
 
-    /**
-     * Service connection to {@link CarTrustAgentBleService}
-     */
     private final ServiceConnection mServiceConnection = new ServiceConnection() {
         @Override
         public void onServiceConnected(ComponentName name, IBinder service) {
@@ -150,7 +135,6 @@ public class CarEnrolmentActivity extends Activity {
             } catch (RemoteException e) {
                 Log.e(TAG, "Error startEnrolmentAdvertising", e);
             }
-            checkTokenHandle();
         }
 
         @Override
@@ -185,10 +169,8 @@ public class CarEnrolmentActivity extends Activity {
         mPrefs = PreferenceManager.getDefaultSharedPreferences(this /* context */);
 
         findViewById(R.id.start_button).setOnClickListener((view) -> {
-            if (!mCarTrustAgentBleServiceBound) {
-                Intent bindIntent = new Intent(this, CarTrustAgentBleService.class);
-                bindService(bindIntent, mServiceConnection, Context.BIND_AUTO_CREATE);
-            }
+            Intent bindIntent = new Intent(this, CarTrustAgentBleService.class);
+            bindService(bindIntent, mServiceConnection, Context.BIND_AUTO_CREATE);
         });
 
         findViewById(R.id.revoke_trust_button).setOnClickListener((view) -> {
@@ -211,17 +193,33 @@ public class CarEnrolmentActivity extends Activity {
             requestPermissions(
                     new String[] { android.Manifest.permission.ACCESS_FINE_LOCATION },
                     FINE_LOCATION_REQUEST_CODE);
+        } else {
+            long tokenHandle = getTokenHandle();
+            if (tokenHandle != -1) {
+                Log.d(TAG, "onResume, checking handle active: " + tokenHandle);
+                if (mCarTrustAgentBleServiceBound) {
+                    try {
+                        // Due to the asynchronous nature of isEscrowTokenActive in
+                        // TrustAgentService, query result will be delivered via
+                        // {@link #mCarTrustAgentTokenResponseCallback}
+                        mCarTrustAgentBleService.isEscrowTokenActive(tokenHandle,
+                                UserHandle.myUserId());
+                    } catch (RemoteException e) {
+                        Log.e(TAG, "Error isEscrowTokenActive", e);
+                    }
+                }
+            } else {
+                appendOutputText("No handles found");
+            }
         }
     }
 
     @Override
-    protected void onStop() {
-        super.onStop();
-
+    protected void onDestroy() {
         if (mCarTrustAgentBleServiceBound) {
             unbindService(mServiceConnection);
-            mCarTrustAgentBleServiceBound = false;
         }
+        super.onDestroy();
     }
 
     private void appendOutputText(final String text) {
@@ -236,23 +234,7 @@ public class CarEnrolmentActivity extends Activity {
         mCarTrustAgentBleService.addEscrowToken(token, UserHandle.myUserId());
     }
 
-    private void checkTokenHandle() {
-        long tokenHandle = mPrefs.getLong(SP_HANDLE_KEY, -1);
-        if (tokenHandle != -1) {
-            Log.d(TAG, "Checking handle active: " + tokenHandle);
-            if (mCarTrustAgentBleServiceBound) {
-                try {
-                    // Due to the asynchronous nature of isEscrowTokenActive in
-                    // TrustAgentService, query result will be delivered via
-                    // {@link #mCarTrustAgentTokenResponseCallback}
-                    mCarTrustAgentBleService.isEscrowTokenActive(tokenHandle,
-                            UserHandle.myUserId());
-                } catch (RemoteException e) {
-                    Log.e(TAG, "Error isEscrowTokenActive", e);
-                }
-            }
-        } else {
-            appendOutputText("No handles found");
-        }
+    private long getTokenHandle() {
+        return mPrefs.getLong(SP_HANDLE_KEY, -1);
     }
 }
